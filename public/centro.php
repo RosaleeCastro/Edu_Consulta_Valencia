@@ -12,7 +12,14 @@ $codigo = trim($_GET['codigo'] ?? '');
 <body>
     <header class="cabecera cabecera-detalle">
         <div class="contenedor">
-            <a href="index.php" class="enlace-retorno">Volver al buscador</a>
+            <a href="index.php" class="enlace-retorno">
+                <span class="flecha-retorno" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                        <path d="M14.5 5 7.5 12l7 7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"/>
+                    </svg>
+                </span>
+                <span>Volver al buscador</span>
+            </a>
             <span class="etiqueta-proyecto">Ficha del centro</span>
             <h1 id="detalle-nombre">Cargando información del centro...</h1>
             <p id="detalle-subtitulo">Estamos consultando los datos oficiales del centro seleccionado.</p>
@@ -71,8 +78,8 @@ $codigo = trim($_GET['codigo'] ?? '');
                     </div>
                     <div class="acciones-detalle">
                         <a id="detalle-mapa" class="enlace-centro enlace-centro-secundario" href="#" target="_blank" rel="noopener noreferrer">Abrir mapa</a>
-                        <a id="detalle-ficha-oficial" class="enlace-centro" href="#" target="_blank" rel="noopener noreferrer">Ficha oficial</a>
                     </div>
+                    <a id="detalle-ficha-oficial" class="enlace-fuente" href="#" target="_blank" rel="noopener noreferrer">Contrastar con la fuente oficial del centro</a>
                 </div>
             </aside>
         </section>

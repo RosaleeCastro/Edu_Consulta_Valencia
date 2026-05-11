@@ -19,6 +19,8 @@ let ubicacionesPorProvincia = {};
 let mapaResultados;
 let capaMarcadores;
 let tarjetasPorCodigo = new Map();
+let marcadoresPorCodigo = new Map();
+let codigoCentroActivo = null;
 
 cargarUbicaciones();
 inicializarMapaResultados();
@@ -91,6 +93,8 @@ function limpiarResultados() {
   mensajeFiltros.hidden = true;
   mensajeFiltros.textContent = "";
   tarjetasPorCodigo = new Map();
+  marcadoresPorCodigo = new Map();
+  codigoCentroActivo = null;
   panelResultados.classList.add("oculto");
   barraVistas.classList.add("oculto");
 
@@ -125,6 +129,7 @@ function pintarResultados(centros) {
   mostrarResumenFiltros();
   panelResultados.classList.remove("oculto");
   barraVistas.classList.remove("oculto");
+  refrescarMapaResultados();
 
   centros.forEach(function (centro) {
     const tarjeta = document.createElement("article");
@@ -143,12 +148,6 @@ function pintarResultados(centros) {
     const botonMapaClase = centro.coordenadas_disponibles
       ? "enlace-centro enlace-centro-secundario"
       : "enlace-centro enlace-centro-secundario deshabilitado";
-    const enlaceOficial = centro.url && centro.url !== "#" ? centro.url : "#";
-    const botonFichaClase =
-      centro.url && centro.url !== "#"
-        ? "enlace-centro"
-        : "enlace-centro deshabilitado";
-
     tarjeta.innerHTML = `
             <h3>${escaparHtml(centro.nombre)}</h3>
 
@@ -183,14 +182,11 @@ function pintarResultados(centros) {
             )}</p>
 
             <div class="acciones-tarjeta">
-              <a href="${enlaceDetalle}" class="enlace-centro enlace-centro-secundario">
-                  Ver detalle
+              <a href="${enlaceDetalle}" class="enlace-centro">
+                  Ver centro
               </a>
               <a href="${enlaceMapa}" class="${botonMapaClase}" target="_blank" rel="noopener noreferrer">
                   Ver mapa
-              </a>
-              <a href="${enlaceOficial}" class="${botonFichaClase}" target="_blank" rel="noopener noreferrer">
-                  Ficha oficial
               </a>
             </div>
         `;
@@ -199,6 +195,10 @@ function pintarResultados(centros) {
 
     if (centro.codigo) {
       tarjetasPorCodigo.set(String(centro.codigo), tarjeta);
+      tarjeta.addEventListener("mouseenter", () => activarMarcadorCentro(centro.codigo));
+      tarjeta.addEventListener("mouseleave", () => desactivarMarcadorCentro(centro.codigo));
+      tarjeta.addEventListener("focusin", () => activarMarcadorCentro(centro.codigo));
+      tarjeta.addEventListener("focusout", () => desactivarMarcadorCentro(centro.codigo));
     }
   });
 
@@ -338,10 +338,19 @@ function actualizarMapaResultados(centros) {
 
     const marcador = L.marker([lat, lon], {
       title: centro.nombre,
+      icon: crearIconoCentro(false),
     }).addTo(capaMarcadores);
 
     marcador.bindPopup(crearPopupMapa(centro));
-    marcador.on("click", () => destacarTarjetaCentro(centro.codigo));
+    marcador.on("click", () => {
+      destacarTarjetaCentro(centro.codigo);
+      activarMarcadorCentro(centro.codigo);
+    });
+    marcador.on("popupclose", () => desactivarMarcadorCentro(centro.codigo));
+
+    if (centro.codigo) {
+      marcadoresPorCodigo.set(String(centro.codigo), marcador);
+    }
   });
 
   contadorMapa.textContent =
@@ -353,6 +362,7 @@ function actualizarMapaResultados(centros) {
     mensajeMapa.textContent =
       "Los resultados no incluyen coordenadas válidas para dibujarse en el mapa.";
     centrarMapaPorDefecto();
+    refrescarMapaResultados();
     return;
   }
 
@@ -362,6 +372,7 @@ function actualizarMapaResultados(centros) {
     padding: [36, 36],
     maxZoom: 14,
   });
+  refrescarMapaResultados();
 }
 
 function crearPopupMapa(centro) {
@@ -374,7 +385,7 @@ function crearPopupMapa(centro) {
       <strong>${escaparHtml(centro.nombre)}</strong>
       <span>${escaparHtml(centro.tipo)}</span>
       <span>${escaparHtml(centro.localidad)} · ${escaparHtml(centro.provincia)}</span>
-      <a href="${enlaceDetalle}">Ver detalle</a>
+      <a href="${enlaceDetalle}">Ver centro</a>
     </div>
   `;
 }
@@ -401,12 +412,80 @@ function destacarTarjetaCentro(codigo) {
   });
 }
 
+function activarMarcadorCentro(codigo) {
+  if (!codigo) {
+    return;
+  }
+
+  const codigoNormalizado = String(codigo);
+  const marcador = marcadoresPorCodigo.get(codigoNormalizado);
+  const tarjeta = tarjetasPorCodigo.get(codigoNormalizado);
+
+  if (!marcador) {
+    return;
+  }
+
+  if (codigoCentroActivo && codigoCentroActivo !== codigoNormalizado) {
+    desactivarMarcadorCentro(codigoCentroActivo);
+  }
+
+  marcador.setIcon(crearIconoCentro(true));
+  marcador.openPopup();
+  codigoCentroActivo = codigoNormalizado;
+
+  if (tarjeta) {
+    tarjeta.classList.add("destacada");
+  }
+}
+
+function desactivarMarcadorCentro(codigo) {
+  if (!codigo) {
+    return;
+  }
+
+  const codigoNormalizado = String(codigo);
+  const marcador = marcadoresPorCodigo.get(codigoNormalizado);
+  const tarjeta = tarjetasPorCodigo.get(codigoNormalizado);
+
+  if (!marcador) {
+    return;
+  }
+
+  marcador.setIcon(crearIconoCentro(false));
+
+  if (tarjeta) {
+    tarjeta.classList.remove("destacada");
+  }
+
+  if (codigoCentroActivo === codigoNormalizado) {
+    codigoCentroActivo = null;
+  }
+}
+
+function crearIconoCentro(activo) {
+  const claseActiva = activo ? " marcador-centro-activo" : "";
+
+  return L.divIcon({
+    className: "contenedor-marcador-centro",
+    html: `
+      <div class="marcador-centro${claseActiva}">
+        <span class="marcador-centro-pulso"></span>
+        <span class="marcador-centro-nucleo"></span>
+      </div>
+    `,
+    iconSize: activo ? [34, 34] : [22, 22],
+    iconAnchor: activo ? [17, 17] : [11, 11],
+    popupAnchor: [0, -16],
+  });
+}
+
 function centrarMapaPorDefecto() {
   if (!mapaResultados) {
     return;
   }
 
   mapaResultados.setView([39.4699, -0.3763], 9);
+  refrescarMapaResultados();
 }
 
 function cambiarVistaResultados(vista) {
@@ -417,9 +496,19 @@ function cambiarVistaResultados(vista) {
     boton.classList.toggle("activo", boton.dataset.view === vista);
   });
 
-  if (mapaResultados) {
-    window.setTimeout(() => mapaResultados.invalidateSize(), 180);
+  refrescarMapaResultados();
+}
+
+function refrescarMapaResultados() {
+  if (!mapaResultados) {
+    return;
   }
+
+  window.requestAnimationFrame(() => {
+    window.setTimeout(() => {
+      mapaResultados.invalidateSize(true);
+    }, 220);
+  });
 }
 
 function construirUrlMapa(latitud, longitud) {

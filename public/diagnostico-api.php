@@ -1,9 +1,22 @@
 <?php
 
+/**
+ * Pagina de diagnostico de conectividad.
+ *
+ * Sirve para comprobar si el entorno local puede conectarse a la API externa
+ * usando cURL y file_get_contents. Es util cuando XAMPP no consigue obtener
+ * datos del portal de la Generalitat.
+ */
+
 require_once __DIR__ . '/../config/config.php';
 
+// Endpoint base alternativo del portal de datos abiertos.
 $endpointBase = 'https://dadesobertes.gva.es/va/api/3/action';
+
+// Consulta SQL de prueba. Se mantiene para diagnosticar datastore_search_sql.
 $sql = 'SELECT * FROM "' . RESOURCE_ID_CENTROS . '" LIMIT 1';
+
+// URLs que se probaran desde PHP.
 $pruebas = [
     'api_sql' => $endpointBase . '/datastore_search_sql?' . http_build_query([
         'sql' => $sql
@@ -16,6 +29,9 @@ $pruebas = [
         RESOURCE_ID_CENTROS . '/download/centros-docentes-de-la-comunitat-valenciana.csv'
 ];
 
+/**
+ * Escapa valores para mostrarlos en HTML sin riesgo.
+ */
 function escaparHtml(mixed $valor): string
 {
     if (is_bool($valor)) {
@@ -29,13 +45,16 @@ function escaparHtml(mixed $valor): string
     return htmlspecialchars((string) $valor, ENT_QUOTES, 'UTF-8');
 }
 
+/**
+ * Prueba una URL usando cURL.
+ */
 function probarConCurl(string $url): array
 {
     if (!function_exists('curl_init')) {
         return [
             'disponible' => false,
             'ok' => false,
-            'mensaje' => 'La extensión cURL no está habilitada.'
+            'mensaje' => 'La extension cURL no esta habilitada.'
         ];
     }
 
@@ -73,6 +92,7 @@ function probarConCurl(string $url): array
         ];
     }
 
+    // Cuando CURLOPT_HEADER esta activo, la respuesta trae cabeceras y cuerpo.
     $tamCabecera = $info['header_size'] ?? 0;
     $cabeceras = substr($respuesta, 0, $tamCabecera);
     $cuerpo = substr($respuesta, $tamCabecera);
@@ -90,6 +110,9 @@ function probarConCurl(string $url): array
     ];
 }
 
+/**
+ * Prueba una URL usando file_get_contents.
+ */
 function probarConFileGetContents(string $url): array
 {
     $allowUrlFopen = filter_var(ini_get('allow_url_fopen'), FILTER_VALIDATE_BOOLEAN);
@@ -98,7 +121,7 @@ function probarConFileGetContents(string $url): array
         return [
             'disponible' => false,
             'ok' => false,
-            'mensaje' => 'allow_url_fopen está deshabilitado en php.ini.'
+            'mensaje' => 'allow_url_fopen esta deshabilitado en php.ini.'
         ];
     }
 
@@ -139,6 +162,7 @@ function probarConFileGetContents(string $url): array
     ];
 }
 
+// Se agrupan los resultados para mostrarlos facilmente en la pagina.
 $diagnostico = [
     'php_version' => PHP_VERSION,
     'curl_habilitado' => function_exists('curl_init'),
@@ -164,8 +188,9 @@ $diagnostico = [
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Diagnóstico API</title>
+    <title>Diagnostico API</title>
     <style>
+        /* Estilos simples solo para esta pagina de diagnostico. */
         body {
             margin: 0;
             padding: 32px;
@@ -233,14 +258,14 @@ $diagnostico = [
 <body>
     <div class="contenedor">
         <div class="tarjeta">
-            <h1>Diagnóstico de conexión con la API externa</h1>
-            <p>Esta página prueba la conectividad desde tu PHP/XAMPP hacia la API de la Generalitat.</p>
+            <h1>Diagnostico de conexion con la API externa</h1>
+            <p>Esta pagina prueba la conectividad desde tu PHP/XAMPP hacia la API de la Generalitat.</p>
         </div>
 
         <div class="tarjeta">
             <h2>Resumen del entorno</h2>
             <table>
-                <tr><td>Versión de PHP</td><td><?= escaparHtml($diagnostico['php_version']) ?></td></tr>
+                <tr><td>Version de PHP</td><td><?= escaparHtml($diagnostico['php_version']) ?></td></tr>
                 <tr><td>cURL habilitado</td><td><?= escaparHtml($diagnostico['curl_habilitado']) ?></td></tr>
                 <tr><td>OpenSSL habilitado</td><td><?= escaparHtml($diagnostico['openssl_habilitado']) ?></td></tr>
                 <tr><td>mbstring habilitado</td><td><?= escaparHtml($diagnostico['mbstring_habilitado']) ?></td></tr>
@@ -252,13 +277,13 @@ $diagnostico = [
 
         <div class="tarjeta">
             <h2>Prueba con cURL</h2>
-            <p>Se prueban tres rutas: SQL, búsqueda simple y descarga directa del CSV.</p>
+            <p>Se prueban tres rutas: SQL, busqueda simple y descarga directa del CSV.</p>
             <pre><?= escaparHtml($diagnostico['curl']) ?></pre>
         </div>
 
         <div class="tarjeta">
             <h2>Prueba con file_get_contents</h2>
-            <p>Esto nos dirá si el problema está en cURL o en toda salida HTTPS desde PHP.</p>
+            <p>Esto ayuda a distinguir si el problema esta en cURL o en toda la salida HTTPS desde PHP.</p>
             <pre><?= escaparHtml($diagnostico['file_get_contents']) ?></pre>
         </div>
     </div>

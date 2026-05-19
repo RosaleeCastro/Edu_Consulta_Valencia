@@ -1,16 +1,25 @@
 <?php
 
+// Carga las constantes API_BASE_URL y RESOURCE_ID_CENTROS.
 require_once __DIR__ . '/../../config/config.php';
 
 class CentroEducativoApiService
 {
+    /**
+     * Busca centros aplicando los filtros que llegan desde el formulario.
+     */
     public function buscarCentros(string $localidad, string $provincia = '', string $regimen = '', string $tipoCentro = ''): array
     {
+        // Primero se obtiene el dataset completo desde la API publica.
         $registros = $this->obtenerRegistros();
 
+        // Despues se filtra y se transforma a la estructura que usa el frontend.
         return $this->filtrarYMapearCentros($registros, $localidad, $provincia, $regimen, $tipoCentro);
     }
 
+    /**
+     * Genera el catalogo de provincias y localidades reales del dataset.
+     */
     public function obtenerUbicaciones(): array
     {
         $registros = $this->obtenerRegistros();
@@ -20,10 +29,12 @@ class CentroEducativoApiService
             $provincia = trim($registro['provincia'] ?? '');
             $localidad = trim($registro['localidad'] ?? '');
 
+            // Si falta provincia o localidad, el registro no sirve para los selects.
             if ($provincia === '' || $localidad === '') {
                 continue;
             }
 
+            // Se usa un array asociativo para evitar localidades duplicadas.
             if (!isset($ubicaciones[$provincia])) {
                 $ubicaciones[$provincia] = [];
             }
@@ -31,13 +42,17 @@ class CentroEducativoApiService
             $ubicaciones[$provincia][$localidad] = true;
         }
 
+        // Orden alfabetico de provincias.
         ksort($ubicaciones, SORT_NATURAL | SORT_FLAG_CASE);
 
         $resultado = [];
 
         foreach ($ubicaciones as $provincia => $localidades) {
             $listaLocalidades = array_keys($localidades);
+
+            // Orden alfabetico de localidades dentro de cada provincia.
             sort($listaLocalidades, SORT_NATURAL | SORT_FLAG_CASE);
+
             $resultado[] = [
                 'provincia' => $provincia,
                 'localidades' => $listaLocalidades
@@ -47,12 +62,16 @@ class CentroEducativoApiService
         return $resultado;
     }
 
+    /**
+     * Busca un centro concreto por su codigo oficial.
+     */
     public function obtenerCentroPorCodigo(string $codigo): ?array
     {
         $codigoBuscado = trim($codigo);
         $registros = $this->obtenerRegistros();
 
         foreach ($registros as $registro) {
+            // La ficha debe coincidir exactamente con el codigo recibido.
             if (($registro['codigo'] ?? '') !== $codigoBuscado) {
                 continue;
             }
@@ -63,8 +82,12 @@ class CentroEducativoApiService
         return null;
     }
 
+    /**
+     * Consulta la API externa y devuelve los registros del recurso.
+     */
     private function obtenerRegistros(): array
     {
+        // Se construye la URL de CKAN con el recurso de centros y un limite amplio.
         $url = API_BASE_URL . '?' . http_build_query([
             'resource_id' => RESOURCE_ID_CENTROS,
             'limit' => 5000
@@ -72,6 +95,7 @@ class CentroEducativoApiService
 
         $respuestaApi = $this->hacerPeticion($url);
 
+        // CKAN devuelve success=false si la consulta no ha funcionado.
         if (!$respuestaApi['success']) {
             return [];
         }
@@ -79,6 +103,12 @@ class CentroEducativoApiService
         return $respuestaApi['result']['records'] ?? [];
     }
 
+    /**
+     * Hace la peticion HTTP a la API externa.
+     *
+     * Primero intenta usar cURL. Si cURL no esta disponible o falla, usa
+     * file_get_contents como segunda opcion.
+     */
     private function hacerPeticion(string $url): array
     {
         $respuesta = false;
@@ -97,6 +127,9 @@ class CentroEducativoApiService
                 CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
                 CURLOPT_ENCODING => '',
                 CURLOPT_USERAGENT => 'EduConsultaValencia/1.0',
+
+                // En XAMPP local a veces hay problemas con certificados.
+                // Para un proyecto en produccion deberia validarse SSL.
                 CURLOPT_SSL_VERIFYPEER => false,
                 CURLOPT_SSL_VERIFYHOST => false
             ]);
@@ -107,6 +140,7 @@ class CentroEducativoApiService
             curl_close($curl);
         }
 
+        // Fallback si cURL no existe o no pudo obtener respuesta.
         if ($respuesta === false) {
             $contexto = stream_context_create([
                 'http' => [
@@ -126,27 +160,33 @@ class CentroEducativoApiService
                 $mensaje = 'No se pudo consultar la API externa.';
 
                 if ($ultimoError !== '') {
-                    $mensaje .= ' cURL devolvió: ' . $ultimoError . '.';
+                    $mensaje .= ' cURL devolvio: ' . $ultimoError . '.';
                 }
 
-                $mensaje .= ' Revisa si la API remota está disponible o si allow_url_fopen está habilitado en PHP.';
+                $mensaje .= ' Revisa si la API remota esta disponible o si allow_url_fopen esta habilitado en PHP.';
 
                 throw new Exception($mensaje);
             }
         }
 
+        // Convierte el JSON recibido en un array asociativo de PHP.
         $datos = json_decode($respuesta, true);
 
         if (!is_array($datos)) {
-            throw new Exception('La API externa no devolvió un JSON válido.');
+            throw new Exception('La API externa no devolvio un JSON valido.');
         }
 
         return $datos;
     }
 
+    /**
+     * Aplica filtros sobre los registros originales y mapea los resultados.
+     */
     private function filtrarYMapearCentros(array $registros, string $localidad, string $provincia, string $regimen, string $tipoCentro): array
     {
         $centros = [];
+
+        // Se normalizan las busquedas para comparar sin depender de mayusculas.
         $localidadBuscada = $this->normalizarTexto($localidad);
         $provinciaBuscada = $this->normalizarTexto($provincia);
         $regimenBuscado = $this->normalizarRegimen($regimen);
@@ -156,6 +196,8 @@ class CentroEducativoApiService
             $localidadApi = $registro['localidad'] ?? '';
             $provinciaApi = $registro['provincia'] ?? '';
             $regimenApi = $registro['regimen'] ?? '';
+
+            // Para filtrar por tipo se combinan la denominacion generica y el nombre.
             $tipoCentroApi = trim(($registro['denominacion_generica_es'] ?? '') . ' ' . ($registro['denominacion'] ?? ''));
 
             if (!$this->contieneTextoNormalizado($localidadApi, $localidadBuscada)) {
@@ -180,6 +222,9 @@ class CentroEducativoApiService
         return $centros;
     }
 
+    /**
+     * Convierte un registro original de la API en el formato propio del proyecto.
+     */
     private function mapearCentro(array $registro): array
     {
         $tipoVia = trim($registro['tipo_via'] ?? '');
@@ -191,6 +236,7 @@ class CentroEducativoApiService
         $codigo = trim($registro['codigo'] ?? '');
         $urlOficial = trim($registro['url_es'] ?? '');
 
+        // Si el dataset no trae URL oficial, se construye una ficha oficial por codigo.
         if ($urlOficial === '' && $codigo !== '') {
             $urlOficial = 'https://www.ceice.gva.es/web/centros-docentes/ficha-centro?codi=' . rawurlencode($codigo);
         }
@@ -217,10 +263,15 @@ class CentroEducativoApiService
             'url' => $urlOficial !== '' ? $urlOficial : '#',
             'url_valenciano' => ($registro['url_va'] ?? '') ?: '#',
             'fecha_constitucion' => ($registro['fe_constitucion'] ?? '') ?: 'No disponible',
+
+            // El frontend usa esta bandera para decidir si pinta marcador.
             'coordenadas_disponibles' => $latitud !== null && $latitud !== '' && $longitud !== null && $longitud !== '',
         ];
     }
 
+    /**
+     * Comprueba si un texto de la API contiene una busqueda ya normalizada.
+     */
     private function contieneTextoNormalizado(string $texto, string $busqueda): bool
     {
         if ($busqueda === '') {
@@ -230,6 +281,9 @@ class CentroEducativoApiService
         return str_contains($this->normalizarTexto($texto), $busqueda);
     }
 
+    /**
+     * Traduce los valores del filtro de regimen a patrones del dataset.
+     */
     private function coincideRegimen(string $regimenApi, string $regimenBuscado): bool
     {
         $regimenApiNormalizado = $this->normalizarTexto($regimenApi);
@@ -247,6 +301,9 @@ class CentroEducativoApiService
         return $this->normalizarTexto($regimen);
     }
 
+    /**
+     * Relaciona filtros simples del formulario con textos posibles del dataset.
+     */
     private function coincideTipoCentro(string $tipoCentroApi, string $tipoCentroBuscado): bool
     {
         $tipoApiNormalizado = $this->normalizarTexto($tipoCentroApi);
@@ -275,34 +332,20 @@ class CentroEducativoApiService
         return false;
     }
 
+    /**
+     * Normaliza textos para comparar de forma flexible.
+     *
+     * Convierte a minusculas y elimina acentos cuando PHP puede transliterar.
+     */
     private function normalizarTexto(string $texto): string
     {
         $texto = trim(mb_strtolower($texto, 'UTF-8'));
-        $reemplazos = [
-            'á' => 'a',
-            'à' => 'a',
-            'ä' => 'a',
-            'â' => 'a',
-            'é' => 'e',
-            'è' => 'e',
-            'ë' => 'e',
-            'ê' => 'e',
-            'í' => 'i',
-            'ì' => 'i',
-            'ï' => 'i',
-            'î' => 'i',
-            'ó' => 'o',
-            'ò' => 'o',
-            'ö' => 'o',
-            'ô' => 'o',
-            'ú' => 'u',
-            'ù' => 'u',
-            'ü' => 'u',
-            'û' => 'u',
-            'ñ' => 'n',
-            'ç' => 'c',
-        ];
+        $textoSinAcentos = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $texto);
 
-        return strtr($texto, $reemplazos);
+        if ($textoSinAcentos !== false) {
+            $texto = $textoSinAcentos;
+        }
+
+        return $texto;
     }
 }
